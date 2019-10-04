@@ -77,12 +77,14 @@ impl NextPartList {
         }
         let total: usize = self.parts.values().sum();
         let mut index = rng.gen_range(0, total);
-        for (part, count) in &self.parts {
-            if *count > index {
-                return Some(part);
-            }
-            index -= count;
-        }
-        None
+        // this will always return Some
+        self.parts
+            .iter()
+            .find(|(_, &count)| {
+                let is_right_word = count > index;
+                index = index.wrapping_sub(count);
+                is_right_word
+            })
+            .map(|(part, _)| part)
     }
 }
