@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
+use rand::Rng;
 
 /// The markov chain. This contains the history of all the word combinations this chain has seen.
 ///
@@ -47,28 +48,29 @@ impl Memory {
         // - ...
         // - last_word + __END__
         let mut previous_pair = SentencePartPair::default();
-        for part in line.split_ascii_whitespace() {
-            if part.trim().is_empty() {
-                continue;
-            }
 
+        let add_sequence = |memory: &mut Self, prev_pair, part| {
+            memory
+                .words
+                .entry(prev_pair)
+                .or_insert_with(NextPartList::default)
+                .count_part(part);
+        };
+
+        for part in line
+            .split_ascii_whitespace()
+            .filter(|part| !part.trim().is_empty())
+        {
             if previous_pair.is_valid_sentence() {
                 // if the `previous` is a valid word segment, we add the current word to the list of follow-up words.
-                let entry = self
-                    .words
-                    .entry(previous_pair.clone())
-                    .or_insert_with(Default::default);
-                entry.count_part(SentencePart::Word(part.to_owned()));
+                let new_word = SentencePart::Word(part.to_owned());
+                add_sequence(self, previous_pair.clone(), new_word);
             }
             previous_pair.shift(part);
         }
         // this should always be true, unless the caller provides an empty string
         if previous_pair.is_valid_sentence() {
-            let entry = self
-                .words
-                .entry(previous_pair)
-                .or_insert_with(Default::default);
-            entry.count_part(SentencePart::EndOfLine);
+            add_sequence(self, previous_pair, SentencePart::EndOfLine);
         }
     }
 
@@ -77,7 +79,7 @@ impl Memory {
     /// No validation is given to the word, if the starting word is not a valid word (e.g. it's multiple words), this function will always return None.
     pub fn speak(&self, starting_word: &str) -> Option<String> {
         let mut len = 0;
-        let mut rand = rand::rngs::ThreadRng::default();
+        let mut rand = rand::thread_rng();
         let mut result = String::new();
 
         // We always start with __START__, starting_word
@@ -87,31 +89,23 @@ impl Memory {
         // While the combination of the last 2 words is known
         while let Some(words) = self.words.get(&previous_pair) {
             // Try to get a random follow-up word
-            let next_word = match words.get(&mut rand) {
-                Some(next_word) => next_word,
-                None => {
-                    break;
-                }
+            let word = match words.get(&mut rand) {
+                Some(SentencePart::Word(next_word)) => next_word,
+                _ => break,
             };
 
-            if let SentencePart::Word(word) = next_word {
-                if !result.is_empty() {
-                    result += " ";
-                }
-                result += word;
-                previous_pair.shift(word);
+            if !result.is_empty() {
+                result += " ";
+            }
+            result += word;
+            previous_pair.shift(word);
 
-                len += 1;
+            len += 1;
 
-                // We don't want to get in an infinite loop,
-                // so we add 10% chance to break at the current word, for each 3 words we added
-                let chance_to_break = (len / 3) * 10;
-
-                use rand::Rng;
-                if rand.gen_range(0, 100) < chance_to_break {
-                    break;
-                }
-            } else {
+            // We don't want to get in an infinite loop,
+            // so we add 10% chance to break at the current word, for each 3 words we added
+            let chance_to_break = (len / 3) * 10;
+            if rand.gen_bool(chance_to_break as f64 / 100.0) {
                 break;
             }
         }

@@ -33,9 +33,8 @@ impl SentencePartPair {
 
     /// Shift the pair, so that (`prev`, `prev_prev`) becomes (`word`, `prev`). The old `prev_prev` gets pushed off
     pub fn shift(&mut self, new_prev: impl Into<String>) {
-        let new_prev = SentencePart::Word(new_prev.into());
-        let new_prev_prev = std::mem::replace(&mut self.prev, new_prev);
-        self.prev_prev = new_prev_prev;
+        std::mem::swap(&mut self.prev, &mut self.prev_prev);
+        self.prev = SentencePart::Word(new_prev.into());
     }
 }
 
@@ -66,8 +65,7 @@ pub struct NextPartList {
 impl NextPartList {
     /// Count a part towards this `NextPartList`. If the part does not exist, it will be added.
     pub fn count_part(&mut self, part: SentencePart) {
-        let entry = self.parts.entry(part).or_default();
-        *entry += 1;
+        *self.parts.entry(part).or_insert(0) += 1;
     }
 
     /// Get a random sentence part from this list, weighed towards the part that is mostly used.
