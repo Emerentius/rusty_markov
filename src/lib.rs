@@ -10,4 +10,4 @@ mod words;
 
 pub use self::error::Error;
 pub use self::memory::Memory;
-pub(crate) use self::words::{NextWordList, PrevWords, Word};
+pub(crate) use self::words::{NextPartList, SentencePart, SentencePartPair};

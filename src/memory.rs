@@ -1,4 +1,4 @@
-use crate::{Error, NextWordList, PrevWords, Word};
+use crate::{Error, NextPartList, SentencePart, SentencePartPair};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
@@ -13,7 +13,7 @@ use std::path::Path;
 /// To get a sentence that starts with a given word, call `Memory::get(starting_word: &str)`
 #[derive(Debug, Deserialize, Serialize, Default)]
 pub struct Memory {
-    words: HashMap<PrevWords, NextWordList>,
+    words: HashMap<SentencePartPair, NextPartList>,
 }
 
 impl Memory {
@@ -46,30 +46,29 @@ impl Memory {
         // - first word + second word
         // - ...
         // - last_word + __END__
-        let mut previous = PrevWords {
-            prev: Word::StartOfLine,
-            prev_prev: Word::StartOfLine,
-        };
+        let mut previous_pair = SentencePartPair::default();
         for part in line.split_ascii_whitespace() {
             if part.trim().is_empty() {
                 continue;
             }
 
-            let word = Word::Word(part.to_ascii_lowercase());
-            if previous.prev.is_word() {
+            if previous_pair.is_valid_sentence() {
                 // if the `previous` is a valid word segment, we add the current word to the list of follow-up words.
                 let entry = self
                     .words
-                    .entry(previous.clone())
+                    .entry(previous_pair.clone())
                     .or_insert_with(Default::default);
-                entry.add_word(word.clone());
+                entry.count_part(SentencePart::Word(part.to_owned()));
             }
-            previous.shift(word);
+            previous_pair.shift(part);
         }
         // this should always be true, unless the caller provides an empty string
-        if previous.prev.is_word() {
-            let entry = self.words.entry(previous).or_insert_with(Default::default);
-            entry.add_word(Word::EndOfLine);
+        if previous_pair.is_valid_sentence() {
+            let entry = self
+                .words
+                .entry(previous_pair)
+                .or_insert_with(Default::default);
+            entry.count_part(SentencePart::EndOfLine);
         }
     }
 
@@ -82,13 +81,11 @@ impl Memory {
         let mut result = String::new();
 
         // We always start with __START__, starting_word
-        let mut prev = PrevWords {
-            prev_prev: Word::StartOfLine,
-            prev: Word::Word(starting_word.to_ascii_lowercase()),
-        };
+        let mut previous_pair =
+            SentencePartPair::with_previous_word(starting_word.to_ascii_lowercase());
 
         // While the combination of the last 2 words is known
-        while let Some(words) = self.words.get(&prev) {
+        while let Some(words) = self.words.get(&previous_pair) {
             // Try to get a random follow-up word
             let next_word = match words.get(&mut rand) {
                 Some(next_word) => next_word,
@@ -97,12 +94,12 @@ impl Memory {
                 }
             };
 
-            if let Word::Word(word) = next_word {
+            if let SentencePart::Word(word) = next_word {
                 if !result.is_empty() {
                     result += " ";
                 }
                 result += word;
-                prev.shift(Word::Word(word.to_owned()));
+                previous_pair.shift(word);
 
                 len += 1;
 
